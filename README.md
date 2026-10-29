@@ -177,6 +177,32 @@ That is the whole integration surface: one endpoint in, one endpoint out.
 
 ---
 
+## Tests
+
+```bash
+npm test              # everything
+npm run test:watch    # while developing
+```
+
+| Suite | What it protects |
+|---|---|
+| `relay.gas.test.ts` | `Code.gs` loaded into a fake Apps Script runtime and driven through `doPost`: register → ask → answer → poll → ack → burn, plus auth, rate limits, purge and deregister. |
+| `gas.client.test.ts` | The production transport: `text/plain` (no preflight), HTML-response detection, error hints, URL validation. |
+| `store.test.tsx` | `PulseProvider` mounted as the app mounts it, against a real IndexedDB: onboarding, send, holding card, answer delivery, burn, follow-ups, erase, offline queueing. |
+| `ui.test.tsx` | Rendered screens: holding card is not a bubble, injected markup never renders, retry affordance, lock screen, empty states. |
+| `screens.test.tsx` | Onboarding cannot skip the recovery code; Settings never shows the token and requires confirmation to erase. |
+| `crypto.test.ts` | Published SHA-256/HMAC vectors, PIN hashing, AES-GCM sealing and tamper rejection. |
+| `db.test.ts` | IndexedDB round trips, thread cascades, export redaction, wipe. |
+| `sandbox.relay.test.ts` | The shipping demo driver: the delay, deliver-once, burn-on-ack contract. |
+| `followup.test.ts` / `format.test.ts` | Scheduling rules and the escaping that stands between a third-party answer and `innerHTML`. |
+
+No browser is required: IndexedDB comes from `fake-indexeddb`, and jsdom covers the screens.
+The relay suite is the interesting one — `Code.gs` runs against fakes of Sheets, Properties, Lock
+and Content services, so the Google-side protocol is exercised without a Google account.
+
+A CI workflow (`.github/workflows/ci.yml`) runs typecheck, tests and a build on every push, and
+asserts the PWA assets are still in `dist/`.
+
 ## Project layout
 
 ```
@@ -203,7 +229,7 @@ src/
 ## Scripts
 
 ```bash
-npm test           # follow-up schedule rules (14 assertions, no browser needed)
+npm test           # 177 tests across 10 files (~8s)
 npm run dev        # dev server on 0.0.0.0:5173
 npm run build      # typecheck + production build
 npm run preview    # serve dist/

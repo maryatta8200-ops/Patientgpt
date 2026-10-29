@@ -19,7 +19,7 @@ import * as db from '../lib/db';
 import { cleanOutgoing, haptic } from '../lib/format';
 import { nextFollowUp } from '../lib/followup';
 import { hashPin, makeSalt, randomId, safeEqual, uuid } from '../lib/crypto';
-import { RelayError, makeRelay, probeRelay } from '../lib/relay';
+import { makeRelay, probeRelay } from '../lib/relay';
 import {
   DEFAULT_SETTINGS,
   type AdminQuestion,
@@ -280,7 +280,9 @@ export function PulseProvider({ children }: { children: ReactNode }) {
 
   /** Removes holding cards once the real answer lands, so the thread stays clean. */
   const clearAutoAcks = useCallback(async (forMessageId: string) => {
-    const list = Object.values(stateRef.current.messages).flat();
+    // Read from IndexedDB, not React state: within a single async chain the
+    // stateRef snapshot can still be missing a card that was just persisted.
+    const list = await db.allMessages();
     const stale = list.filter((m) => m.auto && m.forMessageId === forMessageId);
     for (const msg of stale) {
       await db.deleteMessage(msg.id);
@@ -405,6 +407,47 @@ export function PulseProvider({ children }: { children: ReactNode }) {
     notify('New answer received', 'Saved on this device. The relay copy is gone.', 'good');
   }, [applySettings, notify]);
 
+  /* ------------------------ follow-up & escalation ---------------------- */
+
+  // Guards against two sweeps posting twice while state is still settling.
+  const followUpsInFlight = useRef<Set<string>>(new Set());
+
+  /**
+   * Posts due follow-ups. Runs on the poll path so there is a single timer in
+   * the app, and so a nudge can never fire while the device is asleep.
+   */
+  const sweepFollowUps = useCallback(async () => {
+    if (document.visibilityState === 'hidden') return;
+    const { settings: current, messages: all } = stateRef.current;
+    const now = Date.now();
+
+    for (const list of Object.values(all)) {
+      for (const msg of list) {
+        if (msg.role !== 'user') continue;
+        if (msg.status !== 'awaiting' && msg.status !== 'sending') continue;
+        if (followUpsInFlight.current.has(msg.id)) continue;
+
+        const decision = nextFollowUp({
+          stage: msg.nudgeStage ?? 0,
+          ageMs: now - msg.createdAt,
+          settings: current,
+        });
+        if (!decision) continue;
+
+        followUpsInFlight.current.add(msg.id);
+        try {
+          const marked: Message = { ...msg, nudgeStage: decision.stage };
+          await db.putMessage(marked);
+          setMessages((prev) => replaceMessage(prev, marked));
+          await postAutoAck(marked.threadId, marked.id, decision.text, decision.kind);
+        } finally {
+          // Scoped to this sweep only — a cooldown would block the later stage.
+          followUpsInFlight.current.delete(msg.id);
+        }
+      }
+    }
+  }, [postAutoAck]);
+
   const refresh = useCallback(
     async (_opts?: { silent?: boolean }) => {
       const { identity: id, settings: s } = stateRef.current;
@@ -412,26 +455,42 @@ export function PulseProvider({ children }: { children: ReactNode }) {
       busy.current = true;
       setSyncing(true);
       try {
-        await flushQueued();
-        await pullAnswers();
-        const probe = makeRelay(s);
+        // Each stage is isolated: a dead relay must never throw out of a
+        // background refresh, and must never lose a queued question.
         try {
-          await probe.ping({ deviceId: id.deviceId, token: id.token });
+          await flushQueued();
+        } catch (err) {
+          setLastError(err instanceof Error ? err.message : 'Could not reach the relay');
+        }
+
+        try {
+          await pullAnswers();
+        } catch (err) {
+          setConnection(s.sandbox || !s.relayUrl ? 'sandbox' : navigator.onLine ? 'error' : 'offline');
+          setLastError(err instanceof Error ? err.message : 'Relay unreachable');
+        }
+
+        try {
+          await sweepFollowUps();
+        } catch {
+          /* follow-ups are cosmetic; never let them break a refresh */
+        }
+
+        try {
+          await makeRelay(s).ping({ deviceId: id.deviceId, token: id.token });
           setConnection(s.sandbox || !s.relayUrl ? 'sandbox' : 'online');
           setLastError(null);
-        } catch (err) {
-          if (!(err instanceof RelayError) || !/admin/i.test(err.message)) {
-            setConnection(s.sandbox || !s.relayUrl ? 'sandbox' : 'error');
-            setLastError(err instanceof Error ? err.message : 'Relay unreachable');
-          }
+        } catch {
+          setConnection(s.sandbox || !s.relayUrl ? 'sandbox' : navigator.onLine ? 'error' : 'offline');
         }
+
         setLastSyncAt(Date.now());
       } finally {
         busy.current = false;
         setSyncing(false);
       }
     },
-    [flushQueued, pullAnswers],
+    [flushQueued, pullAnswers, sweepFollowUps],
   );
 
   const send = useCallback(
@@ -639,54 +698,6 @@ export function PulseProvider({ children }: { children: ReactNode }) {
         .length,
     [messages],
   );
-
-  /* ------------------------ follow-up & escalation ---------------------- */
-
-  // Guards against a timer tick posting twice while state is still settling.
-  const followUpsInFlight = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!ready || !identity || locked) return;
-
-    const tick = () => {
-      if (document.visibilityState === 'hidden') return;
-      const { settings: current, messages: all } = stateRef.current;
-      const now = Date.now();
-
-      for (const list of Object.values(all)) {
-        for (const msg of list) {
-          if (msg.role !== 'user') continue;
-          if (msg.status !== 'awaiting' && msg.status !== 'sending') continue;
-          if (followUpsInFlight.current.has(msg.id)) continue;
-
-          const decision = nextFollowUp({
-            stage: msg.nudgeStage ?? 0,
-            ageMs: now - msg.createdAt,
-            settings: current,
-          });
-          if (!decision) continue;
-
-          const nextStage = decision.stage;
-          const text = decision.text;
-          const kind = decision.kind;
-          followUpsInFlight.current.add(msg.id);
-          const marked: Message = { ...msg, nudgeStage: nextStage };
-          void db
-            .putMessage(marked)
-            .then(() => {
-              setMessages((prev) => replaceMessage(prev, marked));
-              return postAutoAck(marked.threadId, marked.id, text, kind);
-            })
-            .finally(() => {
-              window.setTimeout(() => followUpsInFlight.current.delete(msg.id), 2_000);
-            });
-        }
-      }
-    };
-
-    const timer = window.setInterval(tick, 20_000);
-    return () => window.clearInterval(timer);
-  }, [ready, identity, locked, settings.followUpMinutes, settings.escalateMinutes, postAutoAck]);
 
   const intervalRef = useRef<number | null>(null);
   useEffect(() => {

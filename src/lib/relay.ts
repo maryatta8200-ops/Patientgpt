@@ -206,7 +206,13 @@ export class SandboxRelay implements RelayDriver {
     return { token: `sandbox_${randomId(18)}` };
   }
 
-  async ask(input: { text: string; localId: string; threadId: string }) {
+  async ask(input: {
+    deviceId?: string;
+    token?: string;
+    text: string;
+    localId: string;
+    threadId: string;
+  }) {
     const relayId = `sbx_${randomId(10)}`;
     const rows = await this.rows();
     rows.push({
@@ -223,7 +229,7 @@ export class SandboxRelay implements RelayDriver {
     return { relayId, autoAck: undefined, nudge: undefined, escalate: undefined };
   }
 
-  async poll() {
+  async poll(_input: { deviceId: string; token: string }) {
     const rows = await this.rows();
     const now = Date.now();
     let changed = false;
@@ -249,14 +255,14 @@ export class SandboxRelay implements RelayDriver {
     return out;
   }
 
-  async ack(input: { relayIds: string[] }) {
+  async ack(input: { deviceId: string; token: string; relayIds: string[] }) {
     const rows = await this.rows();
     const set = new Set(input.relayIds);
     // Burn after read: the row is deleted outright.
     await this.save(rows.filter((r) => !set.has(r.relayId)));
   }
 
-  async ping() {
+  async ping(_input: { deviceId: string; token: string }) {
     const rows = await this.rows();
     return { serverTime: Date.now(), pending: rows.filter((r) => !r.acked).length };
   }
@@ -265,11 +271,11 @@ export class SandboxRelay implements RelayDriver {
     return { version: 'sandbox', serverTime: Date.now() };
   }
 
-  async deregister() {
+  async deregister(_input: { deviceId: string; token: string }) {
     await this.save([]);
   }
 
-  async adminInbox() {
+  async adminInbox(_adminKey: string) {
     const rows = await this.rows();
     return rows.map<AdminQuestion>((r) => ({
       relayId: r.relayId,
@@ -282,7 +288,7 @@ export class SandboxRelay implements RelayDriver {
     }));
   }
 
-  async adminReply(input: { relayId: string; answer: string }) {
+  async adminReply(input: { adminKey: string; relayId: string; answer: string }) {
     const rows = await this.rows();
     const row = rows.find((r) => r.relayId === input.relayId);
     if (row) {

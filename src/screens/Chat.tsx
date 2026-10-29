@@ -40,7 +40,7 @@ export function Chat({ threadId, onBack }: { threadId: string; onBack: () => voi
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    el.scrollTo?.({ top: el.scrollHeight, behavior: 'smooth' });
   }, [list.length, awaiting]);
 
   useEffect(() => {

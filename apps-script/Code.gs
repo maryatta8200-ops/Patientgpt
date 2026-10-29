@@ -37,6 +37,7 @@ var HEADERS_REGISTRY = [
   'dayKey',
   'status',
   'totalAsks',
+  'lastAskAt',
 ];
 
 var HEADERS_MAILBOX = [
@@ -321,7 +322,18 @@ function register_(p) {
     }
 
     var token = randomKey_(40);
-    var row = [deviceId, sha256Hex_(token), alias, Date.now(), Date.now(), 0, dayKey, 'active', 0];
+    var row = [
+      deviceId,
+      sha256Hex_(token),
+      alias,
+      Date.now(),
+      Date.now(),
+      0,
+      dayKey,
+      'active',
+      0,
+      0, // lastAskAt — kept separate from lastSeen so polling never throttles sending
+    ];
 
     var existing = findRegistryRow_(deviceId);
     if (existing > 0) {
@@ -355,7 +367,9 @@ function ask_(p) {
     var reg = auth.row;
     var now = Date.now();
 
-    if (now - Number(reg.lastSeen || 0) < LIMITS.minAskIntervalMs) {
+    // Measured against the last *question*, not the last request. Polling and
+    // pings refresh lastSeen constantly and must never block a send.
+    if (now - Number(reg.lastAskAt || 0) < LIMITS.minAskIntervalMs) {
       return fail('Slow down', 'Wait a moment between messages.');
     }
     if (Number(reg.asksToday || 0) >= LIMITS.askPerDay) {
@@ -614,7 +628,9 @@ function ensureSheet_(name, headers) {
   if (!sheet) {
     sheet = ss.insertSheet(name);
   }
-  if (sheet.getLastRow() === 0) {
+  var needsHeaders = sheet.getLastRow() === 0 || sheet.getLastColumn() < headers.length;
+  if (needsHeaders) {
+    // Also covers upgrading a sheet created by an earlier version.
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#0f1720').setFontColor('#eaf2f5');
     sheet.setFrozenRows(1);
@@ -652,6 +668,7 @@ function authenticate_(p) {
         asksToday: Number(values[i][5]) || 0,
         dayKey: String(values[i][6]),
         totalAsks: Number(values[i][8]) || 0,
+        lastAskAt: Number(values[i][9]) || 0,
       },
     };
   }
@@ -665,6 +682,7 @@ function updateRegistryCounters_(rowNumber, asksToday, totalAsks, now) {
   registry.getRange(rowNumber, 7).setValue(dayKey);
   registry.getRange(rowNumber, 6).setValue(current === dayKey ? asksToday : 1);
   registry.getRange(rowNumber, 9).setValue(totalAsks);
+  registry.getRange(rowNumber, 10).setValue(now); // lastAskAt
   registry.getRange(rowNumber, 5).setValue(now);
 }
 
@@ -796,6 +814,15 @@ function randomKey_(length) {
     }
   }
   return out;
+}
+
+/** Constant-time comparison of the supplied key against ADMIN_KEY. */
+function isAdmin_(key) {
+  var expected = PropertiesService.getScriptProperties().getProperty('ADMIN_KEY');
+  if (!expected) return false;
+  var supplied = String(key || '');
+  if (!supplied || supplied.length !== expected.length) return false;
+  return constantTimeEqual_(supplied, expected);
 }
 
 function isUuid_(value) {
