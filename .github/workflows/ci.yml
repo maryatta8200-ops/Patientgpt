@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: typecheck · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck (app and tests)
+        run: npx tsc -b
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify PWA assets survived the build
+        run: |
+          test -f dist/sw.js
+          test -f dist/manifest.webmanifest
+          test -f dist/icons/icon-512.png
+          test -f dist/icons/maskable-512.png
+          grep -q '"display": "standalone"' dist/manifest.webmanifest
+          echo "PWA assets present"
