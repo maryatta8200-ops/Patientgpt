@@ -88,10 +88,41 @@ npm run build      # → dist/ (static, no server needed)
 
 | Host | How |
 |---|---|
-| **Vercel** | `vercel deploy --prod` — `vercel.json` already sets rewrites, CSP and cache headers. |
+| **GitHub Pages** | Automatic — see below. Free, HTTPS included, no CLI. |
+| **Vercel** | `vercel deploy --prod` — `vercel.json` sets rewrites, CSP and cache headers. |
 | **Netlify** | Drag `dist/` in, or `netlify deploy --prod --dir=dist`. Config in `netlify.toml`. |
-| **GitHub Pages** | Push `dist/` to `gh-pages`. PWA install and the service worker need HTTPS — Pages provides it. |
 | **Any static host** | Upload `dist/`. Must be served over HTTPS for the service worker. |
+
+### GitHub Pages (the free, no-CLI option)
+
+The same build serves a domain root *and* a project subpath (`/<repo>/`), so Pages works
+without a separate configuration.
+
+1. Push this repository to GitHub.
+2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+3. Push to `main` (or run the *Deploy to GitHub Pages* workflow manually).
+
+`.github/workflows/deploy-pages.yml` then typechecks, tests, builds with the correct base path
+(worked out from the repository name), verifies the output, and publishes. The site lands at
+`https://<owner>.github.io/<repo>/`.
+
+Two consequences of Pages worth knowing:
+
+- **No custom response headers.** Pages cannot set `Cache-Control` or a CSP header, so the CSP is
+  also injected into `index.html` as a meta tag at build time (see `vite.config.ts`). That covers
+  script, style, connect and image sources; only `frame-ancestors` is unavailable in a meta tag, so
+  clickjacking protection is weaker there than on Vercel/Netlify.
+- **The service worker and manifest are base-relative.** `public/sw.js` derives its cache keys from
+  its own registration scope and the manifest uses `start_url: "./"`, so installing from
+  `/Patientgpt/` caches `/Patientgpt/...` and never touches the domain root, which may host a
+  different app.
+
+Deploying elsewhere needs no changes: without `VITE_BASE` the build defaults to `/`.
+
+```bash
+npm run build                          # root deploy (Vercel, Netlify, custom domain)
+VITE_BASE=/my-repo/ npm run build      # subpath deploy (any host)
+```
 
 Then install it: **Chrome/Edge → ⋮ → Install app**, or **iOS Safari → Share → Add to Home Screen**.
 
@@ -195,13 +226,14 @@ npm run test:watch    # while developing
 | `db.test.ts` | IndexedDB round trips, thread cascades, export redaction, wipe. |
 | `sandbox.relay.test.ts` | The shipping demo driver: the delay, deliver-once, burn-on-ack contract. |
 | `followup.test.ts` / `format.test.ts` | Scheduling rules and the escaping that stands between a third-party answer and `innerHTML`. |
+| `pwa.test.ts` / `sw.test.ts` | Installability, base-relative paths, and the service worker executed in a VM: correct cache keys at a root *and* a subpath, no relay traffic cached, offline shell fallback. |
 
 No browser is required: IndexedDB comes from `fake-indexeddb`, and jsdom covers the screens.
 The relay suite is the interesting one — `Code.gs` runs against fakes of Sheets, Properties, Lock
 and Content services, so the Google-side protocol is exercised without a Google account.
 
-A CI workflow (`.github/workflows/ci.yml`) runs typecheck, tests and a build on every push, and
-asserts the PWA assets are still in `dist/`.
+Two workflows: `ci.yml` typechecks, tests and builds on every push; `deploy-pages.yml` publishes to
+GitHub Pages from `main` after re-running the same checks and asserting the build is base-relative.
 
 ## Project layout
 

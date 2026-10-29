@@ -7,21 +7,30 @@
  *   • Static assets: stale-while-revalidate, cached forever by hash.
  *   • Relay calls (script.google.com): never cached, never intercepted beyond
  *     passing through — questions and answers must not land in the HTTP cache.
+ *
+ * Every path is derived from the registration scope, so the same file works at
+ * a domain root and under a subpath such as /Patientgpt/.
  */
 
 const VERSION = 'pulse-v1.0.0';
 const SHELL_CACHE = `${VERSION}-shell`;
 const ASSET_CACHE = `${VERSION}-assets`;
 
+/** e.g. "/" for a root deploy, "/Patientgpt/" for a GitHub Pages project site. */
+const BASE = new URL('./', self.registration?.scope || self.location.href).pathname;
+
+/** Resolves a root-relative path against the deploy base. */
+const at = (path) => `${BASE}${path.replace(/^\//, '')}`;
+
 const SHELL_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/maskable-512.png',
-  '/icons/apple-touch-icon.png',
-  '/icons/favicon.svg',
+  at(''),
+  at('index.html'),
+  at('manifest.webmanifest'),
+  at('icons/icon-192.png'),
+  at('icons/icon-512.png'),
+  at('icons/maskable-512.png'),
+  at('icons/apple-touch-icon.png'),
+  at('icons/favicon.svg'),
 ];
 
 self.addEventListener('install', (event) => {
@@ -62,22 +71,26 @@ self.addEventListener('fetch', (event) => {
   // Never cache relay traffic — that is the whole point.
   if (
     url.hostname.endsWith('google.com') ||
-    url.hostname.endsWith('googleusercontent.com') ||
-    url.pathname.startsWith('/api/')
+    url.hostname.endsWith('googleusercontent.com')
   ) {
     return;
   }
+
+  if (url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put('/index.html', copy)).catch(() => undefined);
+          caches
+            .open(SHELL_CACHE)
+            .then((cache) => cache.put(at('index.html'), copy))
+            .catch(() => undefined);
           return response;
         })
         .catch(async () => {
-          const cached = await caches.match('/index.html');
+          const cached = await caches.match(at('index.html'));
           return (
             cached ||
             new Response('<h1>Pulse is offline</h1><p>Reconnect once to re-cache the app.</p>', {
@@ -89,8 +102,6 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-
-  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(request).then((cached) => {

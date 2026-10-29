@@ -5,7 +5,11 @@ export function registerServiceWorker(): void {
 
   window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
+      // BASE_URL is "/" on a root deploy and "/repo/" on a GitHub Pages project
+      // site, so the worker, its scope and its cache keys stay in step.
+      .register(`${import.meta.env.BASE_URL}sw.js`, {
+        scope: import.meta.env.BASE_URL,
+      })
       .then((registration) => {
         registration.addEventListener('updatefound', () => {
           const installing = registration.installing;
