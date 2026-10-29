@@ -250,6 +250,47 @@ export function PulseProvider({ children }: { children: ReactNode }) {
 
   /* ----------------------------- messaging ------------------------------ */
 
+  /** Posts an instant, local "holding" reply so a question is never met with silence. */
+  const postAutoAck = useCallback(
+    async (
+      threadId: string,
+      forMessageId: string,
+      text: string,
+      kind: 'ack' | 'nudge' = 'ack',
+    ): Promise<Message> => {
+      const ack: Message = {
+        id: randomId(10),
+        threadId,
+        role: 'agent',
+        text,
+        createdAt: Date.now(),
+        status: 'delivered',
+        deliveredAt: Date.now(),
+        auto: true,
+        autoKind: kind,
+        forMessageId,
+      };
+      await db.putMessage(ack);
+      setMessages((prev) => replaceMessage(prev, ack));
+      return ack;
+    },
+    [],
+  );
+
+  /** Removes holding cards once the real answer lands, so the thread stays clean. */
+  const clearAutoAcks = useCallback(async (forMessageId: string) => {
+    const list = Object.values(stateRef.current.messages).flat();
+    const stale = list.filter((m) => m.auto && m.forMessageId === forMessageId);
+    for (const msg of stale) {
+      await db.deleteMessage(msg.id);
+      setMessages((prev) => {
+        const thread = prev[msg.threadId];
+        if (!thread) return prev;
+        return { ...prev, [msg.threadId]: thread.filter((m) => m.id !== msg.id) };
+      });
+    }
+  }, []);
+
   const flushQueued = useCallback(async () => {
     const { identity: id, settings: s } = stateRef.current;
     if (!id) return;
@@ -262,7 +303,7 @@ export function PulseProvider({ children }: { children: ReactNode }) {
       await db.putMessage(sending);
       setMessages((prev) => replaceMessage(prev, sending));
       try {
-        const { relayId } = await active.ask({
+        const { relayId, autoAck } = await active.ask({
           deviceId: id.deviceId,
           token: id.token,
           localId: msg.id,
@@ -272,15 +313,29 @@ export function PulseProvider({ children }: { children: ReactNode }) {
         const awaiting: Message = { ...msg, status: 'awaiting', relayId };
         await db.putMessage(awaiting);
         setMessages((prev) => replaceMessage(prev, awaiting));
+
+        // If the relay defines its own holding text, adopt it.
+        if (autoAck && autoAck.trim()) {
+          const card = Object.values(stateRef.current.messages)
+            .flat()
+            .find((m) => m.auto && m.forMessageId === msg.id);
+          if (card && card.text !== autoAck.trim()) {
+            const updated: Message = { ...card, text: autoAck.trim() };
+            await db.putMessage(updated);
+            setMessages((prev) => replaceMessage(prev, updated));
+          }
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Could not reach the relay';
         const failed: Message = { ...msg, status: 'failed', error: message };
         await db.putMessage(failed);
         setMessages((prev) => replaceMessage(prev, failed));
+        // Never leave a "team is working on it" card standing over a failed send.
+        await clearAutoAcks(msg.id);
         setLastError(message);
       }
     }
-  }, []);
+  }, [clearAutoAcks]);
 
   const pullAnswers = useCallback(async () => {
     const { identity: id, settings: s } = stateRef.current;
@@ -291,6 +346,8 @@ export function PulseProvider({ children }: { children: ReactNode }) {
 
     const burn: string[] = [];
     for (const reply of replies) {
+      // The holding card has done its job — clear it before the real answer appears.
+      await clearAutoAcks(reply.messageId);
       const question = await db.getMessage(reply.messageId);
       if (question) {
         const answered: Message = { ...question, status: 'delivered', deliveredAt: reply.answeredAt };
@@ -404,9 +461,14 @@ export function PulseProvider({ children }: { children: ReactNode }) {
       }
 
       haptic(10, s.haptics);
+
+      if (s.autoAck) {
+        await postAutoAck(target, message.id, autoAckText(s));
+      }
+
       await refresh({ silent: true });
     },
-    [refresh],
+    [postAutoAck, refresh],
   );
 
   const retry = useCallback(
@@ -564,6 +626,41 @@ export function PulseProvider({ children }: { children: ReactNode }) {
     [messages],
   );
 
+  /* --------------------------- follow-up nudge -------------------------- */
+
+  useEffect(() => {
+    if (!ready || !identity || locked) return;
+    if (!settings.followUpMinutes) return;
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      const { settings: current, messages: all } = stateRef.current;
+      if (!current.followUpMinutes) return;
+      const cutoff = Date.now() - current.followUpMinutes * 60_000;
+
+      for (const list of Object.values(all)) {
+        for (const msg of list) {
+          if (msg.role !== 'user' || msg.nudged) continue;
+          if (msg.status !== 'awaiting' && msg.status !== 'sending') continue;
+          if (msg.createdAt > cutoff) continue;
+
+          const marked: Message = { ...msg, nudged: true };
+          void db.putMessage(marked).then(() => {
+            setMessages((prev) => replaceMessage(prev, marked));
+            void postAutoAck(
+              marked.threadId,
+              marked.id,
+              'Still on it — your question is with the team. The answer will appear here the moment it lands.',
+              'nudge',
+            );
+          });
+        }
+      }
+    }, 20_000);
+
+    return () => window.clearInterval(timer);
+  }, [ready, identity, locked, settings.followUpMinutes, postAutoAck]);
+
   const intervalRef = useRef<number | null>(null);
   useEffect(() => {
     if (!ready || !identity || locked) return;
@@ -688,6 +785,12 @@ function replaceMessage(state: MessagesByThread, message: Message): MessagesByTh
 
 function byUpdated(a: Thread, b: Thread) {
   return b.updatedAt - a.updatedAt;
+}
+
+/** Server-configured wording wins; otherwise the local setting does. */
+function autoAckText(settings: Settings): string {
+  const text = settings.autoAckText?.trim();
+  return text || DEFAULT_SETTINGS.autoAckText;
 }
 
 const RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

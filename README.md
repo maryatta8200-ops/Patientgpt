@@ -41,6 +41,7 @@ permanently readable by anyone with the link. Pulse inverts that:
 | If the sheet leaks | There is no history to leak — only aliases and hashes. |
 | Identity | A locally generated UUID + CSPRNG token. No email, phone, or password. |
 | Device theft | Optional PIN gate, verified on-device with PBKDF2-SHA256 (210k rounds). |
+| Silence after asking | An instant holding reply is posted locally the moment a question is sent, so nobody waits in the dark. |
 
 **The honest limit.** While a question is in flight — seconds to minutes — anyone with *edit* access
 to the sheet can read it. That is inherent to "answer through a Google Sheet." Pulse shrinks that
@@ -95,6 +96,22 @@ npm run build      # → dist/ (static, no server needed)
 Then install it: **Chrome/Edge → ⋮ → Install app**, or **iOS Safari → Share → Add to Home Screen**.
 
 ---
+
+## Automatic acknowledgement
+
+Nobody should stare at an empty screen after asking. The moment a question is sent, Pulse posts a
+holding card — *"Our team is working on your question."* — written **locally**, so it appears with
+zero latency even offline. It is a status card, not a fake answer.
+
+- **Editable** in Settings → *Automatic acknowledgement*, with a live preview.
+- **Operator-controlled** via the sheet: **Pulse → Set auto-reply message…** stores `AUTO_ACK_TEXT`,
+  which every connected device adopts on its next send — change the wording without shipping a build.
+- **Follow-up nudge**: if no answer has arrived after N minutes (2/4/8, default 4), one gentle
+  *"Still on it…"* card is posted. It never repeats.
+- **Self-cleaning**: the real answer replaces the holding card, and a failed send removes it, so the
+  card can never claim the team is working on something that never left the device.
+
+The card is local-only: the relay never stores it, and it is never counted as an unread answer.
 
 ## Answering questions
 
@@ -198,6 +215,7 @@ npm run icons      # regenerate the icon set
 | Admin console says *Unauthorized* | The key must match the `ADMIN_KEY` script property. Pulse menu → **Show admin key**. |
 | Install prompt never appears | Already installed, dismissed, or the host isn't HTTPS. iOS never fires it — use Share → Add to Home Screen. |
 | Lost the PIN | No recovery, by design. Erase app data (this deletes all local messages). |
+| Holding card never disappears | It is replaced when a real answer arrives. If the send itself failed, the card is removed and the message offers a retry. |
 
 ---
 

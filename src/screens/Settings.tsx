@@ -224,6 +224,87 @@ export function Settings({
           </div>
         </Section>
 
+        {/* Auto reply */}
+        <Section title="Automatic acknowledgement">
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-3.5 py-3">
+              <div>
+                <p className="text-[13px] font-semibold">Instant holding reply</p>
+                <p className="text-[11.5px] text-fog">
+                  {settings.autoAck
+                    ? 'Sent the moment a question is asked'
+                    : 'Off — questions wait in silence'}
+                </p>
+              </div>
+              <Switch
+                checked={settings.autoAck}
+                onChange={(v) => void updateSettings({ autoAck: v })}
+                label="Instant holding reply"
+              />
+            </div>
+
+            {settings.autoAck && (
+              <div className="anim-in space-y-2.5">
+                <label className="block">
+                  <span className="mb-1.5 block text-[11.5px] font-medium uppercase tracking-wider text-fog">
+                    Message shown to the asker
+                  </span>
+                  <textarea
+                    className="field min-h-[76px] py-2.5 text-[13px] leading-relaxed"
+                    rows={3}
+                    maxLength={240}
+                    value={settings.autoAckText}
+                    placeholder="Our team is working on your question."
+                    onChange={(e) => void updateSettings({ autoAckText: e.target.value })}
+                  />
+                  <span className="mt-1 flex items-center justify-between text-[10.5px] text-fog/80">
+                    <span>Written locally — never sent to the relay.</span>
+                    <span className="tnum">{settings.autoAckText.length}/240</span>
+                  </span>
+                </label>
+
+                <div className="rounded-2xl border border-white/8 bg-white/3 p-3.5">
+                  <div className="rounded-xl border border-aurora/18 bg-aurora/5 px-3 py-2">
+                    <p className="flex items-start gap-2 text-[12px] leading-relaxed text-mist">
+                      <span className="live-dot mt-1.5 shrink-0" />
+                      {settings.autoAckText.trim() || 'Our team is working on your question.'}
+                    </p>
+                    <p className="mt-1 pl-4 text-[10.5px] text-fog/70">Automatic reply · preview</p>
+                  </div>
+
+                  <label className="mt-3 block">
+                    <span className="mb-1.5 flex items-center justify-between text-[11.5px] text-fog">
+                      <span>“Still on it” follow-up</span>
+                      <span className="tnum text-mist">
+                        {settings.followUpMinutes === 0 ? 'off' : `${settings.followUpMinutes} min`}
+                      </span>
+                    </span>
+                    <div className="flex gap-1.5">
+                      {[0, 2, 4, 8].map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => void updateSettings({ followUpMinutes: m })}
+                          className={`flex-1 rounded-lg py-1.5 text-[12px] font-semibold transition ${
+                            settings.followUpMinutes === m
+                              ? 'bg-white/12 text-chalk'
+                              : 'bg-white/4 text-fog hover:bg-white/8'
+                          }`}
+                        >
+                          {m === 0 ? 'Off' : `${m}m`}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="mt-1 block text-[10.5px] leading-relaxed text-fog/80">
+                      If no answer has arrived by then, Pulse posts one gentle update. It never repeats
+                      and can be dismissed by the answer itself.
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        </Section>
+
         {/* Privacy */}
         <Section title="Privacy & local data">
           <div className="space-y-2.5">

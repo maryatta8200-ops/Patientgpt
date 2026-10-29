@@ -23,7 +23,7 @@ export interface RelayDriver {
     localId: string;
     threadId: string;
     text: string;
-  }): Promise<{ relayId: string }>;
+  }): Promise<{ relayId: string; autoAck?: string }>;
   poll(input: { deviceId: string; token: string }): Promise<PendingReply[]>;
   ack(input: { deviceId: string; token: string; relayIds: string[] }): Promise<void>;
   ping(input: { deviceId: string; token: string }): Promise<{ serverTime: number; pending: number }>;
@@ -132,8 +132,8 @@ export class GasRelay implements RelayDriver {
     threadId: string;
     text: string;
   }) {
-    const r = await this.call<{ relayId: string }>({ action: 'ask', ...input });
-    return { relayId: r.relayId };
+    const r = await this.call<{ relayId: string; autoAck?: string }>({ action: 'ask', ...input });
+    return { relayId: r.relayId, autoAck: r.autoAck };
   }
 
   async poll(input: { deviceId: string; token: string }) {
@@ -218,7 +218,7 @@ export class SandboxRelay implements RelayDriver {
       acked: false,
     });
     await this.save(rows.slice(-40));
-    return { relayId };
+    return { relayId, autoAck: undefined };
   }
 
   async poll() {

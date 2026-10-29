@@ -12,6 +12,18 @@ How to answer Pulse questions — as a person, or by driving an AI.
 You never need to touch the registry sheet. You never see anything about the person beyond their
 alias.
 
+## The holding reply comes first
+
+The asker already sees *"Our team is working on your question."* before you open the sheet — posted
+locally by their device, so they are never left in silence. After the configured delay (default 4
+minutes) they get one *"Still on it…"* update.
+
+You do not need to send an acknowledgement. **Answer only when you have the answer.** If a question
+will take a long time, reply with a real interim answer — that lands as a proper message and clears
+the holding card, which is more reassuring than watching a timer.
+
+Change the wording for every device from the sheet: **Pulse → Set auto-reply message…**
+
 ## House rules
 
 - **Answer in the row, not in a new one.** A new row is a new question, not a reply.

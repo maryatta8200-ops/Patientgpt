@@ -28,10 +28,21 @@ export function Threads({
   const [filter, setFilter] = useState<'all' | 'waiting'>('all');
 
   const previews = useMemo(() => {
-    const map: Record<string, { text: string; role: 'user' | 'agent'; at: number }> = {};
+    const map: Record<
+      string,
+      { text: string; role: 'user' | 'agent'; at: number; auto?: boolean; nudged?: boolean }
+    > = {};
     for (const [threadId, list] of Object.entries(messages)) {
       const last = list[list.length - 1];
-      if (last) map[threadId] = { text: last.text, role: last.role, at: last.createdAt };
+      if (last) {
+        map[threadId] = {
+          text: last.text,
+          role: last.role,
+          at: last.createdAt,
+          auto: last.auto,
+          nudged: last.autoKind === 'nudge',
+        };
+      }
     }
     return map;
   }, [messages]);
@@ -176,7 +187,7 @@ function ThreadRow({
   alias,
 }: {
   thread: Thread;
-  preview?: { text: string; role: 'user' | 'agent'; at: number };
+  preview?: { text: string; role: 'user' | 'agent'; at: number; auto?: boolean; nudged?: boolean };
   waiting: boolean;
   onOpen: () => void;
   alias: string;
@@ -211,7 +222,11 @@ function ThreadRow({
           </span>
           <span className="mt-0.5 flex items-center gap-1.5">
             <span className="truncate text-[12.5px] text-fog">
-              {waiting && !isAgent ? (
+              {waiting && preview?.auto ? (
+                <span className={preview.nudged ? 'text-amber/90' : 'text-aurora/90'}>
+                  {preview.text.replace(/\s+/g, ' ')}
+                </span>
+              ) : waiting && !isAgent ? (
                 <span className="text-amber/90">Waiting for an answer…</span>
               ) : (
                 preview?.text.replace(/\s+/g, ' ') ?? 'No messages yet'

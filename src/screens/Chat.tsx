@@ -81,7 +81,7 @@ export function Chat({ threadId, onBack }: { threadId: string; onBack: () => voi
             <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-fog">
               {awaiting ? (
                 <>
-                  <span className="live-dot" /> Awaiting reply
+                  <span className="live-dot" /> Team is on it
                 </>
               ) : (
                 <>
@@ -176,12 +176,16 @@ export function Chat({ threadId, onBack }: { threadId: string; onBack: () => voi
                       <div className="hairline flex-1" />
                     </div>
                   )}
-                  <Bubble message={msg} onRetry={() => void retry(msg.id)} />
+                  {msg.auto ? (
+                    <StatusCard message={msg} />
+                  ) : (
+                    <Bubble message={msg} onRetry={() => void retry(msg.id)} />
+                  )}
                 </div>
               );
             })}
 
-            {awaiting && <TypingIndicator />}
+            {awaiting && !list.some((m) => m.auto) && <TypingIndicator />}
           </div>
         )}
       </div>
@@ -269,6 +273,37 @@ function Bubble({ message, onRetry }: { message: Message; onRetry: () => void })
           ) : (
             <>answered · {clockTime(message.createdAt)}</>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusCard({ message }: { message: Message }) {
+  const nudge = message.autoKind === 'nudge';
+  return (
+    <div className="anim-in my-2 flex justify-center px-2">
+      <div
+        className={`flex max-w-[92%] items-start gap-2 rounded-2xl border px-3 py-2 ${
+          nudge
+            ? 'border-amber/20 bg-amber/6'
+            : 'border-aurora/18 bg-aurora/5'
+        }`}
+      >
+        <span className="mt-1 shrink-0">
+          {nudge ? (
+            <IconClock size={13} className="text-amber" />
+          ) : (
+            <span className="live-dot block" />
+          )}
+        </span>
+        <div>
+          <p className={`text-[12.5px] font-medium leading-relaxed ${nudge ? 'text-amber/95' : 'text-mist'}`}>
+            {message.text}
+          </p>
+          <p className="mt-0.5 text-[10.5px] text-fog/70">
+            {nudge ? 'Automatic update' : 'Automatic reply'} · {clockTime(message.createdAt)}
+          </p>
         </div>
       </div>
     </div>

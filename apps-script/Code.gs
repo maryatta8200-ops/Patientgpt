@@ -54,6 +54,8 @@ var HEADERS_MAILBOX = [
 
 var HEADERS_LOG = ['at', 'event', 'detail'];
 
+var DEFAULT_AUTO_ACK = 'Our team is working on your question.';
+
 var LIMITS = {
   questionChars: 4000,
   answerChars: 8000,
@@ -122,6 +124,9 @@ function setupPulse() {
   if (!props.getProperty('RELAY_VERSION')) {
     props.setProperty('RELAY_VERSION', '1.0.0');
   }
+  if (!props.getProperty('AUTO_ACK_TEXT')) {
+    props.setProperty('AUTO_ACK_TEXT', DEFAULT_AUTO_ACK);
+  }
 
   ensureSheet_(SHEET_REGISTRY, HEADERS_REGISTRY);
   ensureSheet_(SHEET_MAILBOX, HEADERS_MAILBOX);
@@ -148,6 +153,9 @@ function setupPulse() {
     'Keep the admin key private. Anyone with it can read and answer pending questions.',
     '',
     'TTL: ' + props.getProperty('TTL_MINUTES') + ' minutes',
+    '',
+    'Automatic holding reply:',
+    props.getProperty('AUTO_ACK_TEXT'),
   ].join('\n');
 
   try {
@@ -165,6 +173,7 @@ function onOpen() {
     .addItem('Show admin key', 'showAdminKey')
     .addItem('Purge expired rows now', 'purgeExpired')
     .addItem('Relay health check', 'healthCheck')
+    .addItem('Set auto-reply message…', 'promptAutoAck')
     .addSeparator()
     .addItem('Deregister a device…', 'promptDeregister')
     .addToUi();
@@ -196,6 +205,26 @@ function healthCheck() {
   );
 }
 
+/**
+ * The instant "our team is working on it" text. The app posts its own copy locally
+ * so the asker sees it with zero latency; this value keeps every device in sync and
+ * lets you change the wording without shipping a new build.
+ */
+function promptAutoAck() {
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+  var current = props.getProperty('AUTO_ACK_TEXT') || DEFAULT_AUTO_ACK;
+  var res = ui.prompt(
+    'Automatic holding reply',
+    'Shown the moment someone asks a question (max 240 chars):\n\nLeave blank to restore the default.',
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  var next = String(res.getResponseText() || '').trim().slice(0, 240);
+  props.setProperty('AUTO_ACK_TEXT', next || DEFAULT_AUTO_ACK);
+  ui.alert('Auto-reply updated:\n\n' + (next || DEFAULT_AUTO_ACK));
+}
+
 function promptDeregister() {
   var ui = SpreadsheetApp.getUi();
   var res = ui.prompt('Deregister device', 'Paste the deviceId to remove:', ui.ButtonSet.OK_CANCEL);
@@ -216,6 +245,7 @@ function health_() {
     version: PropertiesService.getScriptProperties().getProperty('RELAY_VERSION') || '1.0.0',
     serverTime: Date.now(),
     ttlMinutes: ttlMinutes_(),
+    autoAck: autoAckText_(),
   };
 }
 
@@ -304,7 +334,7 @@ function ask_(p) {
     // Optional: hand the question to any AI worker you run (see README).
     notifyAiWorker_(relayId, text);
 
-    return { ok: true, relayId: relayId, serverTime: now };
+    return { ok: true, relayId: relayId, autoAck: autoAckText_(), serverTime: now };
   } finally {
     lock.releaseLock();
   }
@@ -722,6 +752,11 @@ function sanitiseAlias_(value) {
     .trim()
     .slice(0, 40);
   return alias || 'Anonymous';
+}
+
+function autoAckText_() {
+  var text = PropertiesService.getScriptProperties().getProperty('AUTO_ACK_TEXT');
+  return String(text || DEFAULT_AUTO_ACK).slice(0, 240) || DEFAULT_AUTO_ACK;
 }
 
 function ttlMinutes_() {

@@ -21,6 +21,14 @@ export interface Message {
   error?: string;
   /** set when the answer was pulled from the relay */
   deliveredAt?: number;
+  /** true for the instant holding reply ("our team is working on it"), not a real answer */
+  auto?: boolean;
+  /** for auto/status messages: the question they belong to */
+  forMessageId?: string;
+  /** set once a "still on it" nudge has been posted for this question */
+  nudged?: boolean;
+  /** which kind of holding message this is */
+  autoKind?: 'ack' | 'nudge';
 }
 
 export interface Thread {
@@ -52,6 +60,11 @@ export interface Settings {
   onboarded: boolean;
   alias: string;
   lastAckAt: number;
+  /** instant holding reply sent on every new question */
+  autoAck: boolean;
+  autoAckText: string;
+  /** when to post a "still on it" nudge, in minutes (0 = never) */
+  followUpMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -64,6 +77,9 @@ export const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
   alias: '',
   lastAckAt: 0,
+  autoAck: true,
+  autoAckText: 'Our team is working on your question.',
+  followUpMinutes: 4,
 };
 
 export type ConnectionState = 'sandbox' | 'online' | 'offline' | 'error' | 'unconfigured';
