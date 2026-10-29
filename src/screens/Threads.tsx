@@ -30,7 +30,7 @@ export function Threads({
   const previews = useMemo(() => {
     const map: Record<
       string,
-      { text: string; role: 'user' | 'agent'; at: number; auto?: boolean; nudged?: boolean }
+      { text: string; role: 'user' | 'agent'; at: number; auto?: boolean; autoKind?: 'ack' | 'nudge' | 'escalate' }
     > = {};
     for (const [threadId, list] of Object.entries(messages)) {
       const last = list[list.length - 1];
@@ -40,7 +40,7 @@ export function Threads({
           role: last.role,
           at: last.createdAt,
           auto: last.auto,
-          nudged: last.autoKind === 'nudge',
+          autoKind: last.autoKind,
         };
       }
     }
@@ -187,7 +187,7 @@ function ThreadRow({
   alias,
 }: {
   thread: Thread;
-  preview?: { text: string; role: 'user' | 'agent'; at: number; auto?: boolean; nudged?: boolean };
+  preview?: { text: string; role: 'user' | 'agent'; at: number; auto?: boolean; autoKind?: 'ack' | 'nudge' | 'escalate' };
   waiting: boolean;
   onOpen: () => void;
   alias: string;
@@ -223,7 +223,15 @@ function ThreadRow({
           <span className="mt-0.5 flex items-center gap-1.5">
             <span className="truncate text-[12.5px] text-fog">
               {waiting && preview?.auto ? (
-                <span className={preview.nudged ? 'text-amber/90' : 'text-aurora/90'}>
+                <span
+                  className={
+                    preview.autoKind === 'escalate'
+                      ? 'font-medium text-amber'
+                      : preview.autoKind === 'nudge'
+                        ? 'text-amber/90'
+                        : 'text-aurora/90'
+                  }
+                >
                   {preview.text.replace(/\s+/g, ' ')}
                 </span>
               ) : waiting && !isAgent ? (

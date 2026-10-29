@@ -4,6 +4,7 @@ import { Switch } from './Onboarding';
 import { bytes, shortId } from '../lib/format';
 import * as db from '../lib/db';
 import {
+  IconAlert,
   IconBack,
   IconCheck,
   IconChevron,
@@ -295,10 +296,50 @@ export function Settings({
                       ))}
                     </div>
                     <span className="mt-1 block text-[10.5px] leading-relaxed text-fog/80">
-                      If no answer has arrived by then, Pulse posts one gentle update. It never repeats
-                      and can be dismissed by the answer itself.
+                      If no answer has arrived by then, Pulse posts one gentle update. The answer itself
+                      clears it.
                     </span>
                   </label>
+
+                  <label className="mt-3 block">
+                    <span className="mb-1.5 flex items-center justify-between text-[11.5px] text-fog">
+                      <span>Final escalation</span>
+                      <span className="tnum text-mist">
+                        {settings.escalateMinutes === 0 ? 'off' : `${settings.escalateMinutes} min`}
+                      </span>
+                    </span>
+                    <div className="flex gap-1.5">
+                      {[0, 15, 30, 60].map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => void updateSettings({ escalateMinutes: m })}
+                          className={`flex-1 rounded-lg py-1.5 text-[12px] font-semibold transition ${
+                            settings.escalateMinutes === m
+                              ? 'bg-white/12 text-chalk'
+                              : 'bg-white/4 text-fog hover:bg-white/8'
+                          }`}
+                        >
+                          {m === 0 ? 'Off' : m >= 60 ? '1h' : `${m}m`}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="mt-1 block text-[10.5px] leading-relaxed text-fog/80">
+                      One last, firmer update so nobody is left wondering. Ignored unless it comes after
+                      the first follow-up.
+                    </span>
+                  </label>
+
+                  {settings.escalateMinutes > 0 && (
+                    <div className="mt-2.5 rounded-xl border border-amber/22 bg-amber/7 px-3 py-2">
+                      <p className="flex items-start gap-2 text-[12px] leading-relaxed text-amber/95">
+                        <IconAlert size={12} className="mt-1 shrink-0 text-amber" />
+                        {settings.escalateText.trim() || 'Final escalation message'}
+                      </p>
+                      <p className="mt-1 pl-[18px] text-[10.5px] text-fog/70">
+                        Automatic update · preview
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

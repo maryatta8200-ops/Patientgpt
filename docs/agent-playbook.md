@@ -16,13 +16,18 @@ alias.
 
 The asker already sees *"Our team is working on your question."* before you open the sheet — posted
 locally by their device, so they are never left in silence. After the configured delay (default 4
-minutes) they get one *"Still on it…"* update.
+minutes) they get one *"Still on it…"* update, and much later (default 15 minutes) a single firmer
+escalation. Both are automatic and never repeat.
+
+That escalation is a signal about **you**: an unanswered question reached its final warning. Clear it
+by answering — or delete the row if it cannot be answered.
 
 You do not need to send an acknowledgement. **Answer only when you have the answer.** If a question
 will take a long time, reply with a real interim answer — that lands as a proper message and clears
 the holding card, which is more reassuring than watching a timer.
 
-Change the wording for every device from the sheet: **Pulse → Set auto-reply message…**
+Change the wording for every device from the sheet: **Pulse → Set auto-reply message…** and
+**Pulse → Set follow-up messages…**
 
 ## House rules
 

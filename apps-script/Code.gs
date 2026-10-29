@@ -55,6 +55,10 @@ var HEADERS_MAILBOX = [
 var HEADERS_LOG = ['at', 'event', 'detail'];
 
 var DEFAULT_AUTO_ACK = 'Our team is working on your question.';
+var DEFAULT_NUDGE =
+  'Still on it — your question is with the team. The answer will appear here the moment it lands.';
+var DEFAULT_ESCALATE =
+  'This is taking longer than expected. Your question is still queued and will be answered here — you can leave this screen, it will be waiting for you.';
 
 var LIMITS = {
   questionChars: 4000,
@@ -127,6 +131,12 @@ function setupPulse() {
   if (!props.getProperty('AUTO_ACK_TEXT')) {
     props.setProperty('AUTO_ACK_TEXT', DEFAULT_AUTO_ACK);
   }
+  if (!props.getProperty('NUDGE_TEXT')) {
+    props.setProperty('NUDGE_TEXT', DEFAULT_NUDGE);
+  }
+  if (!props.getProperty('ESCALATE_TEXT')) {
+    props.setProperty('ESCALATE_TEXT', DEFAULT_ESCALATE);
+  }
 
   ensureSheet_(SHEET_REGISTRY, HEADERS_REGISTRY);
   ensureSheet_(SHEET_MAILBOX, HEADERS_MAILBOX);
@@ -174,6 +184,7 @@ function onOpen() {
     .addItem('Purge expired rows now', 'purgeExpired')
     .addItem('Relay health check', 'healthCheck')
     .addItem('Set auto-reply message…', 'promptAutoAck')
+    .addItem('Set follow-up messages…', 'promptFollowUps')
     .addSeparator()
     .addItem('Deregister a device…', 'promptDeregister')
     .addToUi();
@@ -225,6 +236,43 @@ function promptAutoAck() {
   ui.alert('Auto-reply updated:\n\n' + (next || DEFAULT_AUTO_ACK));
 }
 
+/**
+ * The two follow-ups: the gentle nudge and the final escalation. Same rule as the
+ * auto-reply — the device generates them locally, this only keeps the wording in sync.
+ */
+function promptFollowUps() {
+  var ui = SpreadsheetApp.getUi();
+  var props = PropertiesService.getScriptProperties();
+
+  var first = ui.prompt(
+    'Follow-up message',
+    'Sent once if no answer has arrived after a few minutes (max 240 chars).\nBlank restores the default.',
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (first.getSelectedButton() !== ui.Button.OK) return;
+  var nudge = String(first.getResponseText() || '').trim().slice(0, 240);
+  props.setProperty('NUDGE_TEXT', nudge || DEFAULT_NUDGE);
+
+  var second = ui.prompt(
+    'Final escalation message',
+    'Sent once, much later, if the question is still unanswered (max 240 chars).\nBlank restores the default.',
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (second.getSelectedButton() !== ui.Button.OK) {
+    ui.alert('Follow-up updated. The escalation was left unchanged.');
+    return;
+  }
+  var escalate = String(second.getResponseText() || '').trim().slice(0, 240);
+  props.setProperty('ESCALATE_TEXT', escalate || DEFAULT_ESCALATE);
+
+  ui.alert(
+    'Follow-ups updated.\n\nFirst:\n' +
+      (nudge || DEFAULT_NUDGE) +
+      '\n\nFinal:\n' +
+      (escalate || DEFAULT_ESCALATE),
+  );
+}
+
 function promptDeregister() {
   var ui = SpreadsheetApp.getUi();
   var res = ui.prompt('Deregister device', 'Paste the deviceId to remove:', ui.ButtonSet.OK_CANCEL);
@@ -246,6 +294,8 @@ function health_() {
     serverTime: Date.now(),
     ttlMinutes: ttlMinutes_(),
     autoAck: autoAckText_(),
+    nudge: followUpText_('NUDGE_TEXT', DEFAULT_NUDGE),
+    escalate: followUpText_('ESCALATE_TEXT', DEFAULT_ESCALATE),
   };
 }
 
@@ -334,7 +384,14 @@ function ask_(p) {
     // Optional: hand the question to any AI worker you run (see README).
     notifyAiWorker_(relayId, text);
 
-    return { ok: true, relayId: relayId, autoAck: autoAckText_(), serverTime: now };
+    return {
+      ok: true,
+      relayId: relayId,
+      autoAck: autoAckText_(),
+      nudge: followUpText_('NUDGE_TEXT', DEFAULT_NUDGE),
+      escalate: followUpText_('ESCALATE_TEXT', DEFAULT_ESCALATE),
+      serverTime: now,
+    };
   } finally {
     lock.releaseLock();
   }
@@ -757,6 +814,11 @@ function sanitiseAlias_(value) {
 function autoAckText_() {
   var text = PropertiesService.getScriptProperties().getProperty('AUTO_ACK_TEXT');
   return String(text || DEFAULT_AUTO_ACK).slice(0, 240) || DEFAULT_AUTO_ACK;
+}
+
+function followUpText_(property, fallback) {
+  var text = PropertiesService.getScriptProperties().getProperty(property);
+  return String(text || fallback).slice(0, 240) || fallback;
 }
 
 function ttlMinutes_() {

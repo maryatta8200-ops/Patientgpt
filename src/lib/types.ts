@@ -25,10 +25,10 @@ export interface Message {
   auto?: boolean;
   /** for auto/status messages: the question they belong to */
   forMessageId?: string;
-  /** set once a "still on it" nudge has been posted for this question */
-  nudged?: boolean;
+  /** follow-ups posted for this question (0 none, 1 nudge, 2 escalation) */
+  nudgeStage?: number;
   /** which kind of holding message this is */
-  autoKind?: 'ack' | 'nudge';
+  autoKind?: 'ack' | 'nudge' | 'escalate';
 }
 
 export interface Thread {
@@ -65,6 +65,10 @@ export interface Settings {
   autoAckText: string;
   /** when to post a "still on it" nudge, in minutes (0 = never) */
   followUpMinutes: number;
+  /** when to post the final escalation, in minutes (0 = never) */
+  escalateMinutes: number;
+  nudgeText: string;
+  escalateText: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -80,6 +84,11 @@ export const DEFAULT_SETTINGS: Settings = {
   autoAck: true,
   autoAckText: 'Our team is working on your question.',
   followUpMinutes: 4,
+  escalateMinutes: 15,
+  nudgeText:
+    'Still on it — your question is with the team. The answer will appear here the moment it lands.',
+  escalateText:
+    'This is taking longer than expected. Your question is still queued and will be answered here — you can leave this screen, it will be waiting for you.',
 };
 
 export type ConnectionState = 'sandbox' | 'online' | 'offline' | 'error' | 'unconfigured';

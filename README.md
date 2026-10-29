@@ -105,9 +105,13 @@ zero latency even offline. It is a status card, not a fake answer.
 
 - **Editable** in Settings → *Automatic acknowledgement*, with a live preview.
 - **Operator-controlled** via the sheet: **Pulse → Set auto-reply message…** stores `AUTO_ACK_TEXT`,
-  which every connected device adopts on its next send — change the wording without shipping a build.
+  and **Pulse → Set follow-up messages…** stores `NUDGE_TEXT` / `ESCALATE_TEXT`. Every connected device
+  adopts them on its next send — change the wording without shipping a build.
 - **Follow-up nudge**: if no answer has arrived after N minutes (2/4/8, default 4), one gentle
   *"Still on it…"* card is posted. It never repeats.
+- **Final escalation**: much later (15/30/60 min, default 15) exactly one firmer update is posted, so
+  nobody is left wondering. It is terminal — the loop stops at stage 2. Ignored unless it comes after
+  the first follow-up, and disabled automatically if the nudge itself is switched off.
 - **Self-cleaning**: the real answer replaces the holding card, and a failed send removes it, so the
   card can never claim the team is working on something that never left the device.
 
@@ -189,6 +193,7 @@ src/
   lib/crypto.ts         WebCrypto: ids, PBKDF2 PIN, AES-GCM sealing
   lib/db.ts             IndexedDB stores, export, wipe, footprint
   lib/relay.ts          transport: GAS driver + local sandbox driver
+  lib/followup.ts       pure follow-up/escalation scheduler (unit tested)
   lib/format.ts         time, escaping, rich-text, haptics
   state/pulse.tsx       the whole state machine — write local, then network
   screens/              Onboarding · Lock · Threads · Chat · Settings · Admin · InstallGuide
@@ -198,6 +203,7 @@ src/
 ## Scripts
 
 ```bash
+npm test           # follow-up schedule rules (14 assertions, no browser needed)
 npm run dev        # dev server on 0.0.0.0:5173
 npm run build      # typecheck + production build
 npm run preview    # serve dist/

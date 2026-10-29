@@ -17,6 +17,7 @@ import {
 } from 'react';
 import * as db from '../lib/db';
 import { cleanOutgoing, haptic } from '../lib/format';
+import { nextFollowUp } from '../lib/followup';
 import { hashPin, makeSalt, randomId, safeEqual, uuid } from '../lib/crypto';
 import { RelayError, makeRelay, probeRelay } from '../lib/relay';
 import {
@@ -256,7 +257,7 @@ export function PulseProvider({ children }: { children: ReactNode }) {
       threadId: string,
       forMessageId: string,
       text: string,
-      kind: 'ack' | 'nudge' = 'ack',
+      kind: 'ack' | 'nudge' | 'escalate' = 'ack',
     ): Promise<Message> => {
       const ack: Message = {
         id: randomId(10),
@@ -303,7 +304,7 @@ export function PulseProvider({ children }: { children: ReactNode }) {
       await db.putMessage(sending);
       setMessages((prev) => replaceMessage(prev, sending));
       try {
-        const { relayId, autoAck } = await active.ask({
+        const { relayId, autoAck, nudge, escalate } = await active.ask({
           deviceId: id.deviceId,
           token: id.token,
           localId: msg.id,
@@ -325,6 +326,19 @@ export function PulseProvider({ children }: { children: ReactNode }) {
             setMessages((prev) => replaceMessage(prev, updated));
           }
         }
+
+        // Operator-owned wording for the follow-ups (see the sheet's Pulse menu).
+        const patch: Partial<Settings> = {};
+        if (nudge?.trim()) patch.nudgeText = nudge.trim();
+        if (escalate?.trim()) patch.escalateText = escalate.trim();
+        if (Object.keys(patch).length) {
+          const merged = { ...stateRef.current.settings, ...patch };
+          const changed = Object.keys(patch).some(
+            (k) => stateRef.current.settings[k as keyof Settings] !== patch[k as keyof Settings],
+          );
+          if (changed) await applySettings(patch);
+          void merged;
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Could not reach the relay';
         const failed: Message = { ...msg, status: 'failed', error: message };
@@ -335,7 +349,7 @@ export function PulseProvider({ children }: { children: ReactNode }) {
         setLastError(message);
       }
     }
-  }, [clearAutoAcks]);
+  }, [applySettings, clearAutoAcks]);
 
   const pullAnswers = useCallback(async () => {
     const { identity: id, settings: s } = stateRef.current;
@@ -626,40 +640,53 @@ export function PulseProvider({ children }: { children: ReactNode }) {
     [messages],
   );
 
-  /* --------------------------- follow-up nudge -------------------------- */
+  /* ------------------------ follow-up & escalation ---------------------- */
+
+  // Guards against a timer tick posting twice while state is still settling.
+  const followUpsInFlight = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!ready || !identity || locked) return;
-    if (!settings.followUpMinutes) return;
 
-    const timer = window.setInterval(() => {
+    const tick = () => {
       if (document.visibilityState === 'hidden') return;
       const { settings: current, messages: all } = stateRef.current;
-      if (!current.followUpMinutes) return;
-      const cutoff = Date.now() - current.followUpMinutes * 60_000;
+      const now = Date.now();
 
       for (const list of Object.values(all)) {
         for (const msg of list) {
-          if (msg.role !== 'user' || msg.nudged) continue;
+          if (msg.role !== 'user') continue;
           if (msg.status !== 'awaiting' && msg.status !== 'sending') continue;
-          if (msg.createdAt > cutoff) continue;
+          if (followUpsInFlight.current.has(msg.id)) continue;
 
-          const marked: Message = { ...msg, nudged: true };
-          void db.putMessage(marked).then(() => {
-            setMessages((prev) => replaceMessage(prev, marked));
-            void postAutoAck(
-              marked.threadId,
-              marked.id,
-              'Still on it — your question is with the team. The answer will appear here the moment it lands.',
-              'nudge',
-            );
+          const decision = nextFollowUp({
+            stage: msg.nudgeStage ?? 0,
+            ageMs: now - msg.createdAt,
+            settings: current,
           });
+          if (!decision) continue;
+
+          const nextStage = decision.stage;
+          const text = decision.text;
+          const kind = decision.kind;
+          followUpsInFlight.current.add(msg.id);
+          const marked: Message = { ...msg, nudgeStage: nextStage };
+          void db
+            .putMessage(marked)
+            .then(() => {
+              setMessages((prev) => replaceMessage(prev, marked));
+              return postAutoAck(marked.threadId, marked.id, text, kind);
+            })
+            .finally(() => {
+              window.setTimeout(() => followUpsInFlight.current.delete(msg.id), 2_000);
+            });
         }
       }
-    }, 20_000);
+    };
 
+    const timer = window.setInterval(tick, 20_000);
     return () => window.clearInterval(timer);
-  }, [ready, identity, locked, settings.followUpMinutes, postAutoAck]);
+  }, [ready, identity, locked, settings.followUpMinutes, settings.escalateMinutes, postAutoAck]);
 
   const intervalRef = useRef<number | null>(null);
   useEffect(() => {

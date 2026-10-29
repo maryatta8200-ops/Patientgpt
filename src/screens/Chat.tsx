@@ -280,29 +280,31 @@ function Bubble({ message, onRetry }: { message: Message; onRetry: () => void })
 }
 
 function StatusCard({ message }: { message: Message }) {
-  const nudge = message.autoKind === 'nudge';
+  const kind = message.autoKind ?? 'ack';
+  const style =
+    kind === 'escalate'
+      ? { box: 'border-amber/28 bg-amber/8', text: 'text-amber', icon: 'escalate' as const }
+      : kind === 'nudge'
+        ? { box: 'border-amber/20 bg-amber/6', text: 'text-amber/95', icon: 'nudge' as const }
+        : { box: 'border-aurora/18 bg-aurora/5', text: 'text-mist', icon: 'ack' as const };
+
   return (
     <div className="anim-in my-2 flex justify-center px-2">
-      <div
-        className={`flex max-w-[92%] items-start gap-2 rounded-2xl border px-3 py-2 ${
-          nudge
-            ? 'border-amber/20 bg-amber/6'
-            : 'border-aurora/18 bg-aurora/5'
-        }`}
-      >
+      <div className={`flex max-w-[92%] items-start gap-2 rounded-2xl border px-3 py-2 ${style.box}`}>
         <span className="mt-1 shrink-0">
-          {nudge ? (
+          {style.icon === 'ack' ? (
+            <span className="live-dot block" />
+          ) : style.icon === 'nudge' ? (
             <IconClock size={13} className="text-amber" />
           ) : (
-            <span className="live-dot block" />
+            <IconAlert size={13} className="text-amber" />
           )}
         </span>
         <div>
-          <p className={`text-[12.5px] font-medium leading-relaxed ${nudge ? 'text-amber/95' : 'text-mist'}`}>
-            {message.text}
-          </p>
+          <p className={`text-[12.5px] font-medium leading-relaxed ${style.text}`}>{message.text}</p>
           <p className="mt-0.5 text-[10.5px] text-fog/70">
-            {nudge ? 'Automatic update' : 'Automatic reply'} · {clockTime(message.createdAt)}
+            {style.icon === 'ack' ? 'Automatic reply' : 'Automatic update'} ·{' '}
+            {clockTime(message.createdAt)}
           </p>
         </div>
       </div>
